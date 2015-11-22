@@ -326,7 +326,11 @@ class Screen(CommandObject):
         val = self.height
         panel_offset = abs(self.panel_offset)
         if self.top:
+<<<<<<< HEAD
             val -= (self.top.size + panel_offset)
+=======
+            val -= (self.top.size + self.panel_offset)
+>>>>>>> added a panel offset for conky; this should really be configuration and not hard-coded
         if self.bottom:
             val -= (self.bottom.size + panel_offset)
         return val
