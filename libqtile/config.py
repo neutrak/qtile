@@ -277,6 +277,8 @@ class Screen(CommandObject):
         self.y = y
         self.width = width
         self.height = height
+        #ignore areas where other panels are in use
+        self.panel_offset = 30
 
         #leave an area at the top or bottom between the qtile Bar and the tiling area
         #this is so that other third-party panel-type items can be used without conflict.
