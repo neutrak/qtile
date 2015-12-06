@@ -258,7 +258,8 @@ class Screen(CommandObject):
                  left: Optional[BarType] = None, right: Optional[BarType] = None,
                  wallpaper: Optional[str] = None, wallpaper_mode: Optional[str] = None,
                  x: Optional[int] = None, y: Optional[int] = None, width: Optional[int] = None,
-                 height: Optional[int] = None):
+                 height: Optional[int] = None, panel_offset=0):
+
         self.group = None
         self.previous_group = None
 
@@ -276,8 +277,10 @@ class Screen(CommandObject):
         self.y = y
         self.width = width
         self.height = height
-        #ignore areas where other panels are in use
-        self.panel_offset = 30
+        #leave an area at the top or bottom between the qtile Bar and the tiling area
+        #this is so that other third-party panel-type items can be used without conflict.
+        #a negative value means an offset from the bottom of the screen
+        self.panel_offset = panel_offset
 
     def _configure(self, qtile, index, x, y, width, height, group):
         self.qtile = qtile
@@ -306,8 +309,8 @@ class Screen(CommandObject):
 
     @property
     def dy(self):
-#        return self.y + self.top.size if self.top else self.y
-        return self.y + self.top.size + self.panel_offset if self.top else self.y + self.panel_offset
+        panel_offset = self.panel_offset if self.panel_offset >=0 else 0
+        return self.y + self.top.size + panel_offset if self.top else self.y + panel_offset
 
     @property
     def dwidth(self):
@@ -321,10 +324,11 @@ class Screen(CommandObject):
     @property
     def dheight(self):
         val = self.height
+        panel_offset = abs(self.panel_offset)
         if self.top:
-            val -= (self.top.size + self.panel_offset)
+            val -= (self.top.size + panel_offset)
         if self.bottom:
-            val -= self.bottom.size
+            val -= (self.bottom.size + panel_offset)
         return val
 
     def get_rect(self):
