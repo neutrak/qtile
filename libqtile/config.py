@@ -243,7 +243,17 @@ class Screen(command.CommandObject):
     height : int or None
     """
     def __init__(self, top=None, bottom=None, left=None, right=None,
-                 x=None, y=None, width=None, height=None):
+                 x=None, y=None, width=None, height=None, panel_offset=0):
+        """
+            - top, bottom, left, right: Instances of Gap/Bar objects, or None.
+
+            Note that bar.Bar objects can only be placed at the top or the
+            bottom of the screen (bar.Gap objects can be placed anywhere).
+
+            x,y,width and height aren't specified usually unless you are
+            using 'fake screens'.
+        """
+
         self.group = None
         self.previous_group = None
 
@@ -259,8 +269,10 @@ class Screen(command.CommandObject):
         self.y = y
         self.width = width
         self.height = height
-        #ignore areas where other panels are in use
-        self.panel_offset = 30
+        #leave an area at the top or bottom between the qtile Bar and the tiling area
+        #this is so that other third-party panel-type items can be used without conflict.
+        #a negative value means an offset from the bottom of the screen
+        self.panel_offset = panel_offset
 
     def _configure(self, qtile, index, x, y, width, height, group):
         self.qtile = qtile
@@ -283,8 +295,8 @@ class Screen(command.CommandObject):
 
     @property
     def dy(self):
-#        return self.y + self.top.size if self.top else self.y
-        return self.y + self.top.size + self.panel_offset if self.top else self.y + self.panel_offset
+        panel_offset = self.panel_offset if self.panel_offset >=0 else 0
+        return self.y + self.top.size + panel_offset if self.top else self.y + panel_offset
 
     @property
     def dwidth(self):
@@ -298,10 +310,11 @@ class Screen(command.CommandObject):
     @property
     def dheight(self):
         val = self.height
+        panel_offset = abs(self.panel_offset)
         if self.top:
-            val -= (self.top.size + self.panel_offset)
+            val -= (self.top.size + panel_offset)
         if self.bottom:
-            val -= self.bottom.size
+            val -= (self.bottom.size + panel_offset)
         return val
 
     def get_rect(self):
