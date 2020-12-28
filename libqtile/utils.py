@@ -1,4 +1,5 @@
 # Copyright (c) 2008, Aldo Cortesi. All rights reserved.
+# Copyright (c) 2020, Matt Colligan. All rights reserved.
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -19,14 +20,28 @@
 # SOFTWARE.
 
 import functools
+import glob
 import importlib
 import os
 import sys
 import traceback
 import warnings
+from collections import defaultdict
+from collections.abc import Sequence
+from random import randint
 from shutil import which
 
 from libqtile.log_utils import logger
+
+_can_notify = False
+try:
+    import gi
+    gi.require_version("Notify", "0.7")  # type: ignore
+    from gi.repository import Notify  # type: ignore
+    Notify.init("Qtile")
+    _can_notify = True
+except ImportError as e:
+    logger.warning("Failed to import dependencies for notifications: %s" % e)
 
 
 class QtileError(Exception):
@@ -60,10 +75,11 @@ def rgb(x):
 
         Here are some valid specifcations:
             #ff0000
+            with alpha: #ff000080
             ff0000
             with alpha: ff0000.5
             (255, 0, 0)
-            (255, 0, 0, 0.5)
+            with alpha: (255, 0, 0, 0.5)
     """
     if isinstance(x, (tuple, list)):
         if len(x) == 4:
@@ -79,9 +95,11 @@ def rgb(x):
             alpha = float("0." + alpha)
         else:
             alpha = 1
-        if len(x) != 6:
-            raise ValueError("RGB specifier must be 6 characters long.")
+        if len(x) not in (6, 8):
+            raise ValueError("RGB specifier must be 6 or 8 characters long.")
         vals = [int(i, 16) for i in (x[0:2], x[2:4], x[4:6])]
+        if len(x) == 8:
+            alpha = int(x[6:8], 16) / 255.0
         vals.append(alpha)
         return rgb(vals)
     raise ValueError("Invalid RGB specifier.")
@@ -137,8 +155,8 @@ def catch_exception_and_warn(warning=Warning, return_on_exception=None,
             try:
                 return_value = func(*args, **kwargs)
             except excepts as err:
-                logger.warning(err.strerror)
-                warnings.warn(err.strerror, warning)
+                logger.warning(str(err))
+                warnings.warn(str(err), warning)
             return return_value
         return wrapper
     return decorator
@@ -218,27 +236,35 @@ def safe_import(module_names, class_name, globals_, fallback=None):
         globals_[class_name] = class_proxy
 
 
-def send_notification(title, message, urgent=False, timeout=10000):
-    """Send a notification."""
-    try:
-        import gi
-        gi.require_version("Notify", "0.7")
-        from gi.repository import Notify
-        Notify.init("Qtile")
-        info = Notify.get_server_info()
-        if info[0]:
-            notifier = Notify.Notification.new(title, message)
-            notifier.set_timeout(timeout)
-            if urgent:
-                notifier.set_urgency(Notify.Urgency.CRITICAL)
-            notifier.show()
-    except Exception as exception:
-        logger.error(exception)
+def send_notification(title, message, urgent=False, timeout=10000, id=None):
+    """
+    Send a notification.
+
+    The id argument, if passed, requests the notification server to replace a visible
+    notification with the same ID. An ID is returned for each call; this would then be
+    passed when calling this function again to replace that notification. See:
+    https://developer.gnome.org/notification-spec/
+    """
+    if _can_notify and Notify.get_server_info()[0]:
+        notifier = Notify.Notification.new(title, message)
+        if urgent:
+            notifier.set_urgency(Notify.Urgency.CRITICAL)
+        notifier.set_timeout(timeout)
+        if id is None:
+            id = randint(10, 1000)
+        notifier.set_property('id', id)
+        notifier.show()
+        return id
 
 
-def guess_terminal():
+def guess_terminal(preference=None):
     """Try to guess terminal."""
-    test_terminals = [
+    test_terminals = []
+    if isinstance(preference, str):
+        test_terminals += [preference]
+    elif isinstance(preference, Sequence):
+        test_terminals += list(preference)
+    test_terminals += [
         'roxterm',
         'sakura',
         'hyper',
@@ -270,3 +296,23 @@ def guess_terminal():
         return terminal
 
     logger.error('Default terminal has not been found.')
+
+
+def scan_files(dirpath, *names):
+    """
+    Search a folder recursively for files matching those passed as arguments, with
+    globbing. Returns a dict with keys equal to entries in names, and values a list of
+    matching paths. E.g.:
+
+    >>> scan_files('/wallpapers', '*.png', '*.jpg')
+    defaultdict(<class 'list'>, {'*.png': ['/wallpapers/w1.png'], '*.jpg':
+    ['/wallpapers/w2.jpg', '/wallpapers/w3.jpg']})
+
+    """
+    files = defaultdict(list)
+
+    for name in names:
+        found = glob.glob(os.path.join(dirpath, '**', name), recursive=True)
+        files[name].extend(found)
+
+    return files
